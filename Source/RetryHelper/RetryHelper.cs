@@ -1,20 +1,23 @@
 ﻿using RetryHelper.Exceptions;
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace RetryHelper
 {
-	public class RetryHelper : IRetryHelper
+	public static class RetryHelper
 	{
+		private const int MaxRetry = 100;
 		/// <summary>
 		/// Retry operation that may possibly fail as a resilience for a void method
 		/// </summary>
 		/// <param name="retryAttempts">Amount of retry attempts</param>
 		/// <param name="timeDelay">Time interval between retries</param>
 		/// <param name="operation">Method to be executed</param>
-		public void RetryOperationOnFail(int retryAttempts, int timeDelay, Action operationToComplete)
+		/// <param name="cancelRetry">A function to test whether retry should be canceled. If the function returns true, the operation will not be retried</param>
+		public static void RetryOnException(int retryAttempts, int timeDelay, Action operationToComplete, Func<Exception, bool> cancelRetry)
 		{
-			LoopOperation<dynamic>(retryAttempts, timeDelay, null, operationToComplete);
+			LoopOperation<bool>(cancelRetry, retryAttempts, timeDelay, null, operationToComplete).Wait();
 		}
 
 		/// <summary>
@@ -23,44 +26,49 @@ namespace RetryHelper
 		/// <param name="retryAttempts">Amount of retry attempts</param>
 		/// <param name="timeDelay">Time interval between retries</param>
 		/// <param name="operation">Method to be executed</param>
-		public TReturn RetryOperationOnFail<TReturn>(int retryAttempts, int timeDelay, Func<TReturn> operationToComplete)
+		/// <param name="cancelRetry">A function to test whether retry should be canceled. If the function returns true, the operation will not be retried</param>
+		public static TReturn RetryOnException<TReturn>(int retryAttempts, int timeDelay, Func<TReturn> operationToComplete, Func<Exception, bool> cancelRetry)
 		{
-			var result = LoopOperation<TReturn>(retryAttempts, timeDelay, operationToComplete);
+			var result = LoopOperation(cancelRetry, retryAttempts, timeDelay, operationToComplete).Result;
 			return result;
 		}
 
-		private T LoopOperation<T>(int retryAttempts, int timeDelay, Func<T> funcOperation = null, Action actionOperation = null)
+		private async static Task<T> LoopOperation<T>(Func<Exception, bool> cancelRetry, int retryAttempts, int timeDelay, Func<T> funcOperation = null, Action actionOperation = null)
 		{
+			if (retryAttempts <= 0)
+			{
+				throw new ArgumentOutOfRangeException("retryAttempts", "retryAttempts must be greater than zero");
+			}
+
 			var tries = 0;
-			T result;
 			do
 			{
 				try
 				{
-					tries++;
 					if (funcOperation != null)
 					{
-						result = funcOperation();
+						return funcOperation();
 					}
-					else
-					{
-						actionOperation?.Invoke();
-						result = default(T);
-					}
-					break;
+					actionOperation?.Invoke();
+					return default(T);
 				}
 				catch (Exception e)
 				{
-					if (tries == retryAttempts)
+					tries++;
+
+					if (cancelRetry(e))
 					{
-						throw new RetryExcededException($"Exception thrown due to all retry attempts({retryAttempts}) failing" , e);
+						throw e;
 					}
-					Thread.Sleep(timeDelay);
+
+					if (tries == retryAttempts || tries == MaxRetry)
+					{
+						throw new RetryExceededException($"Exception thrown due to all retry attempts({tries}) failing", e);
+					}
+					await Task.Delay(timeDelay).ConfigureAwait(false);
 				}
 
 			} while (true);
-
-			return result;
 		}
 	}
 }

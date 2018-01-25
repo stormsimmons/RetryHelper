@@ -7,12 +7,10 @@ namespace RetryHelper.Tests
 	[TestClass]
 	public class RetryHelperTests
 	{
-		private RetryHelper _retryHelper;
 		private TestMethodsToVerify _testMethodsToVerify;
 		public RetryHelperTests()
 		{
 			_testMethodsToVerify = new TestMethodsToVerify();
-			_retryHelper = new RetryHelper();
 		}
 
 		public void Dispose()
@@ -20,37 +18,72 @@ namespace RetryHelper.Tests
 			_testMethodsToVerify.Dispose();
 		}
 
+
 		[TestMethod]
-		public void RetryOperationOnFail_MethodThrowExceptions_CallsMethodOnce()
+		public void RetryOnException_MethodThrowExceptions_CallsMethodOnce()
 		{
-			_retryHelper.RetryOperationOnFail(3, 10,
-				() => _testMethodsToVerify.DoSomethingWithErrors());
+			RetryHelper.RetryOnException(3, 10,
+				() => _testMethodsToVerify.DoSomethingWithErrors(),
+				(e) => { return false; });
 
 			Assert.AreEqual(50, _testMethodsToVerify.assertVariable);
 		}
 		[TestMethod]
-		[ExpectedException(typeof(RetryExcededException))]
-		public void RetryOperationOnFail_MethodThrowExceptions_ThrowsException()
+		[ExpectedException(typeof(AggregateException))]
+		public void RetryOnException_MethodThrowExceptions_ThrowsException()
 		{
-			_retryHelper.RetryOperationOnFail(2, 10,
-				() => _testMethodsToVerify.DoSomethingWithErrors());
+			RetryHelper.RetryOnException(2, 10,
+				() => _testMethodsToVerify.DoSomethingWithErrors(),
+				(e) => { return false; });
 		}
 
 		[TestMethod]
-		public void RetryOperationOnFail_MethodThrowExceptions_CallsMethodReturnsResult()
+		public void RetryOnException_MethodThrowExceptions_CallsMethodReturnsResult()
 		{
-			var result = _retryHelper.RetryOperationOnFail<string>(3, 10,
-					() => _testMethodsToVerify.DoSomethingWithErrorsWithReturn());
+			var result = RetryHelper.RetryOnException<string>(3, 10,
+					() => _testMethodsToVerify.DoSomethingWithErrorsWithReturn(),
+					(e) => { return false; });
 
 			Assert.AreEqual("this is a test string", result);
 		}
 
 		[TestMethod]
-		[ExpectedException(typeof(RetryExcededException))]
-		public void RetryOperationOnFail_MethodThrowExceptions_ThrowsExceptionForReturnMethod()
+		[ExpectedException(typeof(AggregateException))]
+		public void RetryOnException_MethodThrowExceptions_ThrowsExceptionForReturnMethod()
 		{
-			var result = _retryHelper.RetryOperationOnFail<string>(2, 10,
-					() => _testMethodsToVerify.DoSomethingWithErrorsWithReturn());
+			var result = RetryHelper.RetryOnException<string>(2, 10,
+					() => _testMethodsToVerify.DoSomethingWithErrorsWithReturn(),
+					(e) => { return false; });
+		}
+
+		[TestMethod]
+		[ExpectedException(typeof(AggregateException))]
+		public void RetryOnException_MethodAbortWithConfigurableExceptions_ThrowsExceptionForReturnMethod()
+		{
+			var result = RetryHelper.RetryOnException<string>(3, 10,
+					() => _testMethodsToVerify.DoSomethingWithErrorsWithReturn(),
+					(e) => {
+						if (e is Exception)
+						{
+							return true;
+						}
+						return false;
+					});
+		}
+
+		[TestMethod]
+		[ExpectedException(typeof(AggregateException))]
+		public void RetryOnException_MethodAbortWithConfigurableExceptions_ThrowsException()
+		{
+			RetryHelper.RetryOnException(3, 10,
+				() => _testMethodsToVerify.DoSomethingWithErrors(),
+				(e) => {
+					if (e is Exception)
+					{
+						return true;
+					}
+					return false;
+				});
 		}
 
 	}
